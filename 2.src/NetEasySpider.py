@@ -5,7 +5,7 @@ import requests
 import json
 import numpy as np
 from binascii import b2a_hex, a2b_hex
-
+import pprint
 class PsecretEnum:
     '''
     索引查表变量
@@ -146,9 +146,14 @@ class RSAcrypt:
         return hex(result).upper()[2:]
 
 class EasyNetAPI:
-    def __init__(self):
-        pass
-
+    def __init__(self,id=0):
+        self.songID = id
+        self.headers = {
+            'Cookie': 'appver=1.5.0.75771;',
+            'Origin': 'http://music.163.com/',
+            'Referer': 'http://music.163.com/song?id=29463404',
+            'User-Agent': "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/604.3.5 (KHTML, like Gecko) Version/11.0.1 Safari/604.3.5"
+        }
     def _AES_encrypt(self,text,key):
         '''
         补全，被加密串需要16字节对齐
@@ -177,10 +182,10 @@ class EasyNetAPI:
         '''
         执行core.js中的a函数,生成一个随机串,输入为循环次数
         '''
-        b = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        b = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"#不包含小写
         c = ""
+        e = np.random.randint(0,len(b))
         for d in range(num):
-            e = np.random.randint(0,len(b))
             c += b[e]
         return c
 
@@ -190,45 +195,62 @@ class EasyNetAPI:
                     encSecKey: bAQ8I.encSecKey
         '''
         h = EastNetParam()
-        i = self._randomAES(16)#随机生成aes秘钥串
-        i = 16*chr(ord('F'))
+        i = self._randomAES(16)#随机生成aes秘钥串,似乎需要16个相同字母，完全随机有问题？此处加密规则应该还有问题
+        #print(len(i),i)
+        #i = 16*chr(ord('F'))
         h.encText = self._AES_encrypt(StrJson, StaticFour)
         h.encText = self._AES_encrypt(h.encText, i)
-        h.encSecKey = self._RSA_encrypt(i, StaticTwo, StaticAll)#aes秘钥串RSA加密发送
+        h.encSecKey = self._RSA_encrypt(i, StaticTwo, StaticAll)#aes秘钥串RSA加密发送 RSA在加密非相同字符串的时候还有问题
+        #print(h.encSecKey)
         return h
     
+    def getComment(self,page=0):
+        '''
+        第几页评论，默认抓第一页到评论，及热评
+        '''
+        ID = str(self.songID)
+        enum = PsecretEnum()
+        url = "http://music.163.com/weapi/v1/resource/comments/R_SO_4_"+ID+"/?csrf_token="
+        first_param = "{rid: \"R_SO_4_"+ID+"\", offset: \""+str(page*20)+"\", total: \""+\
+        ("false" if page else "true")+"\", limit: \"20\", csrf_token: \"\"}"
+        param = self.asrsea(first_param,enum.getString(["流泪", "强"]),\
+                                enum.getString(enum.index),\
+                                enum.getString(["爱心", "女孩", "惊恐", "大笑"]))
+        data = {
+            "params": param.encText,
+            "encSecKey": param.encSecKey
+        }
+        response = requests.post(url, headers=self.headers, data=data)
+        return response.content
 
-    
-headers = {
-    'Cookie': 'appver=1.5.0.75771;',
-    'Origin': 'http://music.163.com/',
-    'Referer': 'http://music.163.com/song?id=29463404',
-    'User-Agent': "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/604.3.5 (KHTML, like Gecko) Version/11.0.1 Safari/604.3.5"
-}
-
-def get_json(url, params, encSecKey):
-    data = {
-         "params": params,
-         "encSecKey": encSecKey
-    }
-    response = requests.post(url, headers=headers, data=data)
-    return response.content
-
+    def getSongInfo(self):
+        ID = str(self.songID)
+        url = "http://music.163.com/api/song/detail/?ids=["+ID+"]"
+        response = requests.get(url,headers=self.headers)
+        return response.content
 
 if __name__ == "__main__":
-    a="uoQJ6gYBjxR55RA3gRZB5NKcOWBIjGxfB+FkfnNXgaYXeDcHLkkPkDXj+ezQKlDmc06yLEOJVK5TxRxcHM+/okw8ukWTfg34jC8duAV3kHRLizqkOkOmndt9rO7cKq+VIcZJ3O0NoIIbsSxVGE0mu9fgsSzfZkM5W4LjJN/zn69aDeIVr1grZCP+jukajpo2"
-    url = "http://music.163.com/weapi/v1/resource/comments/R_SO_4_29463404/?csrf_token="
-    first_param = "{rid: \"R_SO_4_29463404\", offset: \"40\", total: \"false\", limit: \"20\", csrf_token: \"\"}"
-    spiderapi = EasyNetAPI()
-    enum = PsecretEnum()
-    param = spiderapi.asrsea(first_param,enum.getString(["流泪", "强"]),enum.getString(enum.index),enum.getString(["爱心", "女孩", "惊恐", "大笑"]))
-    #print(param.encText)
-    #print(param.encSecKey)
-    json_text = get_json(url, param.encText, param.encSecKey)
-    print(json_text)
-    '''
+    id = 59875
+    spiderapi = EasyNetAPI(id)
+    json_text = spiderapi.getSongInfo()
     json_dict = json.loads(json_text)
+    pprint.pprint(json_dict)
+    pprint.pprint(json_dict["songs"])
+    with open(r"../3.result/song_"+str(id)+".json","wb") as f:
+        f.write(json.dumps(json_dict,ensure_ascii=False,indent=4).encode("utf-8"))
+    for informations in json_dict['songs']:
+        print('歌曲ID: ', informations['id'])
+        print('歌曲名称: ', ''.join(informations['name']))
+        print('歌手: ', ''.join(names['name'] for names in informations['artists']))
+        print('mp3链接: ', informations['mp3Url'])
+
+    json_text = spiderapi.getComment(1)
+    json_dict = json.loads(json_text)
+    with open(r"../3.result/R_SO_4_"+str(id)+".json","wb") as f:
+        f.write(json.dumps(json_dict,ensure_ascii=False,indent=4).encode("utf-8"))  
+    
     print(json_dict['total'])
     for item in json_dict['comments']:
-        print(item['content'].encode('gbk', 'ignore'))
-    '''
+        #print(item['content'])
+        pass
+   
