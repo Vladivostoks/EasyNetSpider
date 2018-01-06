@@ -6,7 +6,6 @@ import time
 import signal
 import sys
 import datetime
-import pymongo
 
 import NetEasySpider
 import Dealdata
@@ -16,10 +15,12 @@ import pprint
 import traceback
 #默认开始id
 START_INDEX = 59875
+#默认开始page
+page=0
 #默认重试次数
 RETRYTIME = 5
-#默认等待时间
-WAITTIME = 1
+#默认重试时间2秒起跳
+retryTime = 2
 mysqlAPI = None
 sqliteAPI = None
 def CtrlCHandler(signum, frame):
@@ -28,11 +29,12 @@ def CtrlCHandler(signum, frame):
     global mysqlAPI
     global sqliteAPI
     global id
+    global page
     if mysqlAPI:
-        mysqlAPI.updateVersion(id)
+        mysqlAPI.updateVersion(id,page)
 
     if sqliteAPI:
-        sqliteAPI.updateVersion(id)
+        sqliteAPI.updateVersion(id,page)
     sys.exit(0)
 
 def timeTostr(IntTime):
@@ -50,13 +52,14 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, CtrlCHandler)    
     #初始化数据库
     while(1):
-        #mysqlPassword = input('please input passwd for mysql:\n')
-        mysqlPassword="Yang3923086"
+        mysqlPassword = input('please input passwd for mysql:\n')
         try:
             #初始化，连接本地mysql数据库
             mysqlAPI=Dealdata.mysqlSQL(passwd=mysqlPassword,songId=START_INDEX)
-            START_INDEX = mysqlAPI.Get_version()
-            print("start at :",START_INDEX)
+            #初始化上次捕捉位置
+            START_INDEX,page = mysqlAPI.Get_versionPage()
+            total = 20*(page+1)
+            print("start at :",START_INDEX,"page:",str(page))
             break
         except pymysql.err.OperationalError as e:
             #捕获密码错误情况
@@ -65,6 +68,7 @@ if __name__ == "__main__":
                 break
     sqliteAPI = Dealdata.sqliteSQL(songId=START_INDEX)
     #初始化id，继续捕捉
+
     while(1):
         id = START_INDEX+i
         Api = NetEasySpider.EasyNetAPI(id)
@@ -73,11 +77,7 @@ if __name__ == "__main__":
             #产生获取歌曲信息，，如果没有返回结果，那么重试，否则如果没有获取到，就跳过
             jsongContent=Api.getSongInfo()
             #print(jsongContent)
-            if not jsongContent :
-                print("Get song info failed") 
-                times+=1
-            else:
-                times=0#归零
+            if jsongContent :
                 jsong = json.loads(jsongContent)
           
                 if jsong["songs"]:
@@ -98,15 +98,14 @@ if __name__ == "__main__":
 
                     #获取评论信息
                     jcommentStr=Api.getComment()
+                    #print(jcommentStr)
                     if jcommentStr:
                         jcomment = json.loads(jcommentStr)
                         #print(jcomment)
-
-                        
                         param={
                             "songId":song["id"],
                             "songName":song["name"],
-                            "brief":song["alias"],
+                            "brief":(" " if not song["alias"] else str(song["alias"][0])),
                             "authorName":artists["name"],
                             "authorId":artists["id"],
                             "bkPicture":album["blurPicUrl"],
@@ -116,18 +115,14 @@ if __name__ == "__main__":
                             "albumsType":album["type"],
                             "Company":album["company"],
                             "Time":timeNowStr,
-                            "CommentNum":(jcomment['total'] if jcomment['total'] else 0)
+                            "CommentNum":(0 if not jcomment['total'] else jcomment['total'])
                         }
-                        TOTAL=jcomment['total']
+                        TOTAL=param['CommentNum']
                         #写歌曲数据库
                         mysqlAPI.insert("Song",param)
-                        #sqliteAPI.insert("Song",param)
+                        sqliteAPI.insert("Song",param)
                         #一页20条数据
-                        if not jcomment:
-                            times+=1
-                        else:
-                            total = 20#初始获取20条
-                            page = 0
+                        if TOTAL>0:
                             for hotComment in jcomment["hotComments"]: 
                                 user=hotComment["user"]
                                 if hotComment["beReplied"]:
@@ -167,14 +162,13 @@ if __name__ == "__main__":
                                     #traceback.print_tb(tb)
 
                                 try:
-                                    #sqliteAPI.insert("hotcomment",param)
-                                    pass
+                                    sqliteAPI.insert("hotcomment",param)
                                 except Exception as err:
                                     print("[{0}]insert hotcomment to sqlite failed".format(jcomment["hotComments"].index(hotComment)))
                                     t,v,tb = sys.exc_info()
                                     pprint.pprint(t)
                                     pprint.pprint(v)
-                                    #traceback.print_tb(tb)
+                                    traceback.print_tb(tb)
                             while(1):
                                 for Comment in jcomment["comments"]:
                                     user=Comment["user"]
@@ -215,7 +209,7 @@ if __name__ == "__main__":
                                         pprint.pprint(v)
                                         #traceback.print_tb(tb)
                                     try:
-                                        #sqliteAPI.insert("comment",param)
+                                        sqliteAPI.insert("comment",param)
                                         pass
                                     except Exception as err:
                                         print("[{0}]insert comment to sqlite failed".format(jcomment["comments"].index(Comment)))
@@ -224,10 +218,11 @@ if __name__ == "__main__":
                                         pprint.pprint(v)
                                         #traceback.print_tb(tb)
                                 #下一页
-                                total+=20
                                 page+=1
+                                total=20*(page+1)
+                                
                                 if(total<(TOTAL+20)):
-                                    time.sleep(0.4)#等待400ms
+                                    #time.sleep(0.4)#等待400ms
                                     try:
                                         jcommentStr=Api.getComment(page)
                                         if jcommentStr:
@@ -243,59 +238,46 @@ if __name__ == "__main__":
                                         traceback.print_tb(tb)
                                 else:
                                     break
-                    else:
-                        #无评论歌曲
-                        param={
-                            "songId":song["id"],
-                            "songName":song["name"],
-                            "brief":song["alias"],
-                            "authorName":artists["name"],
-                            "authorId":artists["id"],
-                            "bkPicture":album["blurPicUrl"],
-                            "publicTime":time_stamp,
-                            "albumsID":album["id"],
-                            "albumsName":album["name"],
-                            "albumsType":album["type"],
-                            "Company":album["company"],
-                            "Time":timeNowStr,
-                            "CommentNum":0
-                        }
-                        #写歌曲数据库
-                        mysqlAPI.insert("Song",param)
-                        #sqliteAPI.insert("Song",param)
+                        else:
+                            #无评论
+                            print("no comment,next")
         except TypeError as err:
             with open(r"../3.result/TypeError.json","wb") as f:
                 f.write(json.dumps(json_dict,ensure_ascii=False,indent=4).encode("utf-8"))  
     
+        except (json.decoder.JSONDecodeError,KeyError) as err:
+            '''
+            503服务不可用的时候或者-460反爬，暂时指数级时间延迟递增重试，后面可换多ip代理
+            '''
+            times+=1
+            retryTime = retryTime*retryTime
+            print("load failed times:"+str(times)+" Next Wait Time:"+str(retryTime))
+
         except Exception as err:
             #出现异常情况，增加重试次数
             t,v,tb = sys.exc_info()
-            print("load failed times:"+str(times))
+            
             pprint.pprint(t)
             pprint.pprint(v)
             traceback.print_tb(tb)
-            times+=1
+            
             if mysqlAPI:
-                mysqlAPI.updateVersion(id)
+                mysqlAPI.updateVersion(id,page)
 
             if sqliteAPI:
-                sqliteAPI.updateVersion(id)
-            pass
+                sqliteAPI.updateVersion(id,page)
         
-        #25次等2秒
-        
-        time.sleep(1)
-        #if RETRYTIME>times>0:
-        if 0:
-            print("times:",times," retry :",id)
-            WAITTIME+=1
-            time.sleep(WAITTIME)#等待一次重试
+        #每次间隔1秒大约2小时达到上限 limit 7200/2h
+        time.sleep(3)
+        if times>0:
+            time.sleep(retryTime)
         else:
+            print("unkown error， jump :",id)
+            #next
             i+=1
-            if times==0:
-                #成功一次后才清零
-                WAITTIME=1
-
+            times=0
+            total = 20#初始获取20条
+            page = 0
         #break
         
 

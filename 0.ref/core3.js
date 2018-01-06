@@ -11791,7 +11791,8 @@ setMaxDigits(20), dpl10 = 15, lr10 = biFromNumber(1e15), hexatrigesimalToChar = 
     function d(d, e, f, g) {
         var h = {},
             i = a(16);
-            i = "FFFFFFFFFFFFFFFF"
+            window.console.info("aes key:"+i)
+            //i = "FFFFFFFFFFFFFFFF"
         return h.encText = b(d, g), window.console.info("AES result:"+h.encText),h.encText = b(h.encText, i), h.encSecKey = c(i, e, f), window.console.info("AES result2:"+h.encText),h
     }
 

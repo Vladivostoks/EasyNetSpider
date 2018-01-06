@@ -152,7 +152,7 @@ class EasyNetAPI:
             'Cookie': 'appver=1.5.0.75771;',
             'Origin': 'http://music.163.com/',
             'Referer': 'http://music.163.com/song?id=29463404',
-            'User-Agent': "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/604.3.5 (KHTML, like Gecko) Version/11.0.1 Safari/604.3.5"
+            'User-Agent': "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36"
         }
     def _AES_encrypt(self,text,key):
         '''

@@ -38,7 +38,8 @@ class SQL_Opration:
                     Version INT AUTO_INCREMENT PRIMARY KEY, 
                     creartTime DATETIME NOT NULL,               
                     endTime DATETIME ,                          
-                    lastestID INT                           
+                    lastestID INT,
+                    lastestPage INT                           
         )"""
     #歌曲ID #歌曲名称 #歌手名称 #歌手ID #简介 #封面图片URL #发行时间 #专辑ID #专辑名称 #专辑类型
     _CREAT_SONGTABLE="""\
@@ -101,8 +102,8 @@ class SQL_Opration:
                     INDEX(Prise)                         
         )"""    
     _INSERT_VERSION="""\
-        REPLACE INTO Version(Version,creartTime,endTime,lastestID)
-                    VALUES('{version}','{creattime}','{endtime}','{lastestId}')
+        REPLACE INTO Version(Version,creartTime,endTime,lastestID,lastestPage)
+                    VALUES('{version}','{creattime}','{endtime}','{lastestId}',{lastestPage})
         """
     _INSERT_SONGINFO="""\
         REPLACE INTO SongInfoTable(SongID,SongName,AuthorName,AuthorID,Brief,Bkpicture,PublicTime,AlbumsID,AlbumsName,AlbumsType,CommentNum,Company,Time)
@@ -174,13 +175,14 @@ class mysqlSQL(SQL_Opration):
             param["creattime"]=timeNowStr
             param["endtime"]=result[2]
             param["lastestId"]=result[3]
-
+            param["lastestPage"]=result[4]
         else:
             #创建一套初始参数
             param["version"] = 0x000001
             param["creattime"]=timeNowStr
             param["endtime"]=timeNowStr
             param["lastestId"]=songId
+            param["lastestPage"]=0
         self.insert("Version",param)
 
     def __del__(self):
@@ -206,7 +208,8 @@ class mysqlSQL(SQL_Opration):
                     version=karg["version"],
                     creattime=karg["creattime"],
                     endtime=karg["endtime"],
-                    lastestId=karg["lastestId"]
+                    lastestId=karg["lastestId"],
+                    lastestPage=karg["lastestPage"]
                     ))
             elif (tableName == "Song"):
                 try:
@@ -276,7 +279,7 @@ class mysqlSQL(SQL_Opration):
             self.DBfd.commit()
     def search(self):
         pass
-    def updateVersion(self,lastid):
+    def updateVersion(self,lastid,lastPage):
         sql='SELECT * FROM Version WHERE version=0x0000001'
         with self.DBfd.cursor() as cursor:
             cursor.execute(sql)
@@ -292,9 +295,11 @@ class mysqlSQL(SQL_Opration):
         param["creattime"]=result[1]
         param["endtime"]=timeNowStr
         param["lastestId"]=lastid
+        param["lastestPage"]=lastPage
+        
         self.insert("Version",param)
 
-    def Get_version(self):
+    def Get_versionPage(self):
         '''
         获取当前起始索引位置
         '''
@@ -304,20 +309,12 @@ class mysqlSQL(SQL_Opration):
                 cursor.execute(sql)
                 result = cursor.fetchone()
             self.DBfd.commit()  
-            # 获取当前时间
-            timeNow = datetime.datetime.now()
-            # 将字符串转化为时间类型           
-            timeNowStr = timeNow.strftime('%Y-%m-%d %H:%M:%S.%f') 
-            param={}
-            if result:
-                param["version"] = result[0]
-                param["creattime"]=timeNowStr
-                param["endtime"]=result[2]
-                param["lastestId"]=result[3]
-                songId = result[3]
-            return songId
+
+            songId = result[3]
+            page = result[4]
+            return songId,page
         else:
-            return None
+            return 59875,0
 
 class sqliteSQL(SQL_Opration):
     '''
@@ -329,7 +326,8 @@ class sqliteSQL(SQL_Opration):
                     Version INT AUTO_INCREMENT PRIMARY KEY, 
                     creartTime DATETIME NOT NULL,               
                     endTime DATETIME ,                          
-                    lastestID INT                           
+                    lastestID INT,
+                    lastestPage INT                             
         )"""
     #歌曲ID #歌曲名称 #歌手名称 #歌手ID #简介 #封面图片URL #发行时间 #专辑ID #专辑名称 #专辑类型 #评论数
     _CREAT_SONGTABLE="""\
@@ -416,8 +414,8 @@ class sqliteSQL(SQL_Opration):
         """)
     
     _INSERT_VERSION="""\
-        REPLACE INTO Version(Version,creartTime,endTime,lastestID)
-                    VALUES('{version}','{creattime}','{endtime}','{lastestId}')
+        REPLACE INTO Version(Version,creartTime,endTime,lastestID,lastestPage)
+                    VALUES('{version}','{creattime}','{endtime}','{lastestId}','{lastestPage}')
         """
     _INSERT_SONGINFO="""\
         REPLACE INTO SongInfoTable(SongID,SongName,AuthorName,AuthorID,Brief,Bkpicture,PublicTime,AlbumsID,AlbumsName,AlbumsType,CommentNum,Company,Time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -468,13 +466,14 @@ class sqliteSQL(SQL_Opration):
             param["creattime"]=timeNowStr
             param["endtime"]=result[2]
             param["lastestId"]=result[3]
-            songId = result[3]
+            param["lastestPage"]=result[4]
         else:
             #创建一套初始参数
             param["version"] = 0x000001
             param["creattime"]=timeNowStr
             param["endtime"]=timeNowStr
             param["lastestId"]=songId
+            param["lastestPage"]=0
         self.insert("Version",param)
 
     def __del__(self):
@@ -496,16 +495,16 @@ class sqliteSQL(SQL_Opration):
             pprint.pprint("-----------------------------------------")
         cursor = self.DBfd.cursor()
         if tableName=="Version":
-            cursor.execute(SQL_Opration.Operation[tableName].format(
+            cursor.execute(self.Operation[tableName].format(
                 version=karg["version"],
                 creattime=karg["creattime"],
                 endtime=karg["endtime"],
-                lastestId=karg["lastestId"]
+                lastestId=karg["lastestId"],
+                lastestPage=karg["lastestPage"]
                 ))
-        elif (tableName == "Song"):
-            
-            cursor.execute(self.Operation[tableName],
-                (karg["songId"],
+        elif (tableName == "Song"):          
+                cursor.execute(self.Operation[tableName],(
+                karg["songId"],
                 karg["songName"],
                 str(karg["authorName"]),
                 karg["authorId"],
@@ -521,7 +520,7 @@ class sqliteSQL(SQL_Opration):
                 ))
 
         elif tableName == "comment":
-            cursor.execute(SQL_Opration.Operation[tableName],(
+            cursor.execute(self.Operation[tableName],(
                 karg["commentID"],
                 karg["creattime"],
                 karg["username"],
@@ -536,7 +535,7 @@ class sqliteSQL(SQL_Opration):
                 ))
 
         elif tableName == "hotcomment":
-            cursor.execute(SQL_Opration.Operation[tableName](
+            cursor.execute(self.Operation[tableName],(
                     karg["commentID"],
                     karg["creattime"],
                     karg["username"],
@@ -549,11 +548,12 @@ class sqliteSQL(SQL_Opration):
                     karg["referName"],
                     karg["SongName"]
                     ))
+        
         else:
             print("insert table not exist!!!")    
         self.DBfd.commit()
 
-    def updateVersion(self,lastid):
+    def updateVersion(self,lastid,lastPage):
         sql='SELECT * FROM Version WHERE version=0x0000001'
         cursor = self.DBfd.cursor()
         cursor.execute(sql)
@@ -569,6 +569,7 @@ class sqliteSQL(SQL_Opration):
         param["creattime"]=result[1]
         param["endtime"]=timeNowStr
         param["lastestId"]=lastid
+        param["lastestPage"]=lastPage
         self.insert("Version",param)
 
     def search(self):
